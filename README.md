@@ -76,14 +76,15 @@ swipe-down panel dismisses it.
 ./scripts/fetch-proot.sh          # Termux's proot -> app/src/main/jniLibs (needs bsdtar)
 ./gradlew :app:installDebug
 # optional: skip the 830 MB download on the device
-adb push ArchLinuxARM-aarch64-latest.tar.gz /sdcard/Android/data/dev.omalauncher/files/
+# (debug builds are dev.omalauncher.nothing, beside the Play Store's dev.omalauncher)
+adb push ArchLinuxARM-aarch64-latest.tar.gz /sdcard/Android/data/dev.omalauncher.nothing/files/
 ```
 
 Tests: `./gradlew :owl:test :app:testDebugUnitTest`. `./gradlew :owl:owlJar`
 builds `owl/build/cli/owl.jar`, the checker the widget store's CI runs.
 
 In debug builds you can launch guest commands with
-`adb shell am start -n dev.omalauncher/.MainActivity --es exec foot`.
+`adb shell am start -n dev.omalauncher.nothing/dev.omalauncher.MainActivity --es exec foot`.
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): the compositor, rendering, GPU
   acceleration, and how updates reach existing installs

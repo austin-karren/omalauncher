@@ -55,6 +55,11 @@ android {
     }
 
     buildTypes {
+        // Installs beside the Play Store's dev.omalauncher, as "Omalauncher Nothing" (src/debug/res/values/strings.xml).
+        // Its data, the Linux guest among it, is under its own package's files dir, so it sets Linux up afresh.
+        debug {
+            applicationIdSuffix = ".nothing"
+        }
         release {
             // Shrinks the APK and drops what the app doesn't use, like the owl module's unused parts.
             isMinifyEnabled = true
