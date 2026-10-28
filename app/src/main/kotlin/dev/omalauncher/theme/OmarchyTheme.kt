@@ -33,9 +33,14 @@ class OmarchyTheme(
     val fromRepo: Boolean = false,
     /** The user's extra backgrounds for this theme, ~/.config/omarchy/backgrounds/<name>. */
     private val extraBackgrounds: File? = null,
+    /** Whether [colors] are its other variant's, worked out by [ThemeVariants.derive] rather than its own colors.toml. */
+    val derived: Boolean = false,
 ) {
     val title get() = titleOf(name)
     val isLight get() = colors["mode"] == "light"
+
+    /** This theme in [colors] [ThemeVariants.derive]d from its own: the same files, but Linux gets the templates rendered in them. */
+    fun withDerivedColors(colors: Map<String, String>) = OmarchyTheme(name, dirs, colors, own, fromRepo, extraBackgrounds, derived = true)
 
     /**
      * Like omarchy-theme-switcher: a preview image of any case and type, the
