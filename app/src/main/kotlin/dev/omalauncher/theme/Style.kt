@@ -67,6 +67,20 @@ sealed class Setting<T>(
         override fun decode(value: Any): String = nonBlank(value, "takes text in quotes")
     }
 
+    /** One of [options], as written in the file: "system", "light" or "dark". */
+    class Choice(
+        key: String,
+        default: String,
+        val options: List<String>,
+        doc: String,
+    ) : Setting<String>(key, default, doc) {
+        override fun decode(value: Any): String {
+            val v = (value as? String)?.trim()?.lowercase()
+            require(v != null && v in options) { "takes ${options.joinToString(", ") { "\"$it\"" }}" }
+            return v
+        }
+    }
+
     protected fun nonBlank(
         value: Any,
         takes: String,
@@ -148,7 +162,21 @@ class Style(
         /** How much tiles and the system bars' bands cover the wallpaper, by default. */
         const val GLASS = 0.88
 
-        val THEME = Setting.Name("theme", "The Omarchy theme, by its directory name in ~/.local/share/omarchy/themes or ~/.config/omarchy/themes (yours win).")
+        val THEME = Setting.Name("theme", "The Omarchy theme, by its directory name in ~/.local/share/omarchy/themes or ~/.config/omarchy/themes (yours win). Either theme of a light and dark pair names both; see appearance.")
+
+        /** [APPEARANCE]'s values; see [ThemeVariants]. */
+        const val APPEARANCE_SYSTEM = "system"
+        const val APPEARANCE_LIGHT = "light"
+        const val APPEARANCE_DARK = "dark"
+
+        val APPEARANCE =
+            Setting.Choice(
+                "appearance",
+                APPEARANCE_SYSTEM,
+                listOf(APPEARANCE_SYSTEM, APPEARANCE_LIGHT, APPEARANCE_DARK),
+                "The theme's light or dark variant: \"system\" follows Android's dark theme as it changes. A theme without one of its own gets it derived from its colors; a theme's colors.toml can name its counterpart with light_variant = \"…\" or dark_variant = \"…\".",
+            )
+
         val BACKGROUND = Setting.Name("background", "A file name from the theme's backgrounds/ or ~/.config/omarchy/backgrounds/<theme>/. Unset: the theme's first.")
 
         val APP_TILES = Setting.Flag("home.app-tiles", true, "Apps on home in a tile like a widget; false draws bare icons on the wallpaper.")
@@ -256,7 +284,7 @@ object StyleFile {
 
     val ALL: List<Setting<*>> =
         with(Style) {
-            listOf(THEME, BACKGROUND, FONT, APP_TILES, RECENT_APPS, EMPTY_PAGE_LEFT, EMPTY_PAGE_RIGHT, COLUMNS, FORCE_SINGLE_PAGE, GAPS_IN, GAPS_OUT, TILE_OPACITY, TILE_FROST, TILE_BORDER_WIDTH, TILE_BORDER, TILE_BORDER_FOCUSED) +
+            listOf(THEME, APPEARANCE, BACKGROUND, FONT, APP_TILES, RECENT_APPS, EMPTY_PAGE_LEFT, EMPTY_PAGE_RIGHT, COLUMNS, FORCE_SINGLE_PAGE, GAPS_IN, GAPS_OUT, TILE_OPACITY, TILE_FROST, TILE_BORDER_WIDTH, TILE_BORDER, TILE_BORDER_FOCUSED) +
                 listOf(SCREEN_GAPS_OUT, SCREEN_BORDER_WIDTH, KEYBAR_GAPS_OUT, KEYBAR_BORDER_WIDTH, MONOCHROME_ICONS, CORNER_SCALE) +
                 listOf(STATUS_BAR_SHOWN) + STATUS_BAR.all + NAVIGATION_BAR.all + listOf(TERMINAL_FONT, TERMINAL_TEXT, SWIPE_UP, SWIPE_DOWN)
         }
