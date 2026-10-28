@@ -1,7 +1,8 @@
 name: build-nothing
 
-# Builds the debug APK (dev.omalauncher.nothing, "Omalauncher Nothing", installs beside the Play Store's
-# dev.omalauncher) with proot, debug-signed: no secrets needed. The APK is the run's artifact.
+# Builds the nothing APK (dev.omalauncher.nothing, "Omalauncher Nothing", installs beside the Play Store's
+# dev.omalauncher; not debuggable, so safe as an everyday launcher) with proot, debug-signed: no secrets
+# needed. The APK is the run's artifact.
 on:
   push:
     branches: ['nothing-*', 'geist-*']
@@ -42,13 +43,13 @@ jobs:
           scripts/fetch-proot.sh
 
       - name: Test and build
-        run: ./gradlew :owl:test :app:testDebugUnitTest :app:assembleDebug
+        run: ./gradlew :owl:test :app:testDebugUnitTest :app:assembleNothing
 
       - name: Name the APK
         id: apk
         run: |
           apk="omalauncher-nothing-$(git rev-parse --short HEAD).apk"
-          cp app/build/outputs/apk/debug/app-debug.apk "$apk"
+          cp app/build/outputs/apk/nothing/app-nothing.apk "$apk"
           sha256sum "$apk"
           echo "file=$apk" >> "$GITHUB_OUTPUT"
 

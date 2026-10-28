@@ -24,8 +24,8 @@ STORE="${1:-$HERE/../../omarchy-widgets}"
 shift || true
 export ANDROID_SERIAL="${ANDROID_SERIAL:-emulator-5554}"
 DEFAULT_THEME=tokyo-night
-# A debug build (run-as and --es need one), which app/build.gradle.kts suffixes with .nothing.
-PKG="${PKG:-dev.omalauncher.nothing}"
+# A debug build (run-as and --es need one); the nothing build (dev.omalauncher.nothing) isn't debuggable.
+PKG="${PKG:-dev.omalauncher}"
 APP=/data/data/$PKG/files/widgets
 STATE=/data/data/$PKG/files/widget-state
 WORK="$(mktemp -d)"
