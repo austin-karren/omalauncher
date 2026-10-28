@@ -131,6 +131,11 @@ fun StyleScreen(
                 },
                 onRemove = { removing = it },
             )
+            // Which of each theme's variants shows; see ThemeVariants.
+            val appearances = Style.APPEARANCE.options
+            StyleOption("appearance", appearances, appearances.indexOf(runtime.style.style[Style.APPEARANCE])) { i ->
+                runtime.style.update { it.with(Style.APPEARANCE, appearances[i]) }
+            }
             store.current?.let { BackgroundSection(store, it) }
             // Style choices don't depend on a theme, so they're offered before themes are downloaded too.
             Heading("home screen")
@@ -282,7 +287,10 @@ private enum class KeybarAction(val label: String) {
     Stock("back to stock"),
 }
 
-/** The installed themes in a row, starting at the current one; browse has Omarchy's whole catalog. */
+/**
+ * The installed themes in a row, starting at the current one, a light and dark pair as one in the variant
+ * the appearance shows; browse has Omarchy's whole catalog.
+ */
 @Composable
 private fun ThemeSection(
     store: ThemeStore,
@@ -301,8 +309,9 @@ private fun ThemeSection(
         DownloadPrompt(store.download, partial = store.themes.isNotEmpty()) { scope.launch { store.ensureRelease() } }
         Spacer(Modifier.height(8.dp))
     }
-    if (store.themes.isNotEmpty()) {
-        val start = store.themes.indexOfFirst { it.name == current?.name }.coerceAtLeast(0)
+    val families = store.families
+    if (families.isNotEmpty()) {
+        val start = families.indexOfFirst { current != null && current.name in it.members }.coerceAtLeast(0)
         LazyRow(
             // Scrolls under the panel's padding to its frame, starting aligned with the heading.
             Modifier.bleed(PanelPadding),
@@ -310,8 +319,8 @@ private fun ThemeSection(
             contentPadding = PaddingValues(horizontal = PanelPadding),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(store.themes, key = { it.name }) { theme ->
-                ThemeCard(theme, selected = theme.name == current?.name, Modifier.width(160.dp)) { scope.launch { store.apply(theme) } }
+            items(families, key = { it.name }) { family ->
+                ThemeCard(family.shown, selected = current != null && current.name in family.members, Modifier.width(160.dp)) { scope.launch { store.pickFamily(family) } }
             }
         }
     }
