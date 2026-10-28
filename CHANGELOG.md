@@ -4,6 +4,14 @@ The most important changes in each release. The Play Store notes for a release
 are in `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt`.
 Dates are when the build was uploaded to Play.
 
+## Unreleased
+
+- Every theme comes in light and dark, and follows Android's dark theme as it changes: launcher,
+  system bars, live wallpaper and Linux's apps. Style > appearance (`appearance` in style.toml)
+  picks system, light or dark. Pairs show as one theme (catppuccin and catppuccin-latte, vantablack
+  and white, nothing-dark and nothing-light); a theme can name its counterpart in its colors.toml with
+  `light_variant = "…"` or `dark_variant = "…"`, and one without gets its other variant derived from its colors.
+
 ## 0.14.0 (versionCode 25) – 2026-10-27
 
 - Tapping a now-playing widget brings up the player's own screen, like a web app's
