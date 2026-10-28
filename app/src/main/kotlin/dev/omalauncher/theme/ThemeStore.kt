@@ -1,9 +1,11 @@
 package dev.omalauncher.theme
 
 import android.app.WallpaperManager
+import android.content.ComponentCallbacks
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -12,6 +14,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import dev.omalauncher.LauncherData
@@ -25,6 +28,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -41,6 +46,16 @@ class BundledTheme(
 ) {
     val title get() = titleOf(name)
 }
+
+/** A theme and its other variant's, if that's a theme of its own: one choice in the Style menu. */
+class ThemeFamily(
+    /** What picking it writes into style.toml: the dark one of a pair. */
+    val name: String,
+    /** The themes in it: [name] and its counterpart, if it has one. */
+    val members: Set<String>,
+    /** What shows of it for [ThemeStore.dark]. */
+    val shown: OmarchyTheme,
+)
 
 /** Installing a theme from its repo; see [ThemeStore.install]. */
 sealed interface ThemeInstall {
@@ -90,6 +105,12 @@ class ThemeStore(
     private val guest = GuestThemeConfig(proot, release.dir)
     private val prefs = prefs(context)
 
+    /** Whether Android's dark theme is on; follows it as it changes. */
+    private var systemDark by mutableStateOf(isNight(context.resources.configuration))
+
+    /** Whether themes show in their dark variant: as [Style.APPEARANCE] says, or as Android's dark theme with "system". */
+    val dark: Boolean by derivedStateOf { ThemeVariants.wantsDark(style.style[Style.APPEARANCE], systemDark) }
+
     var themes by mutableStateOf<List<OmarchyTheme>>(emptyList())
         private set
     var current by mutableStateOf<OmarchyTheme?>(null)
@@ -119,6 +140,46 @@ class ThemeStore(
             own.values.filter { t -> bundled.none { it.name == t.name } }.map { BundledTheme(it.name, it.colors) }
     }
 
+    /**
+     * The themes as the Style menu offers them: each with its counterpart as one
+     * (see [ThemeVariants]), showing the variant for [dark].
+     */
+    val families: List<ThemeFamily> by derivedStateOf {
+        val all = themes
+        val byName = all.associateBy { it.name }
+        val seen = HashSet<String>()
+        all.mapNotNull { theme ->
+            if (theme.name in seen) return@mapNotNull null
+            // One already in a family (two themes naming the same counterpart) leaves this one on its own, so each name is one card.
+            val other =
+                ThemeVariants
+                    .counterpart(theme.name, theme.colors, { byName[it]?.colors }, { all.asSequence().map { it.name to it.colors } })
+                    ?.takeIf { it !in seen }
+            seen += theme.name
+            if (other != null) seen += other
+            val primary = if (theme.isLight && other != null) byName[other] ?: theme else theme
+            ThemeFamily(primary.name, setOfNotNull(theme.name, other), variantOf(primary, all))
+        }
+    }
+
+    /** [theme]'s variant for [dark], among [all]: itself, its counterpart, or one derived from it. */
+    private fun variantOf(
+        theme: OmarchyTheme,
+        all: List<OmarchyTheme> = themes,
+    ): OmarchyTheme {
+        val byName = all.associateBy { it.name }
+        val r = ThemeVariants.resolve(theme.name, theme.colors, dark, { byName[it]?.colors }, { all.asSequence().map { it.name to it.colors } })
+        return when {
+            r.derived -> theme.withDerivedColors(r.colors)
+            r.name == theme.name -> theme
+            else -> byName[r.name] ?: theme
+        }
+    }
+
+    /** A bundled theme's colors in its variant for [dark], for showing before the themes are on disk. */
+    private fun bundledVariant(theme: BundledTheme): Map<String, String> =
+        ThemeVariants.resolve(theme.name, theme.colors, dark, { n -> bundled.firstOrNull { it.name == n }?.colors }).colors
+
     /*
      * style.toml is the one record of the theme and background. What the user
      * does here ([pick], [apply], [setBackground]) changes the style, then shows
@@ -131,7 +192,7 @@ class ThemeStore(
 
     /** Recolors the launcher right away and remembers the choice, with its first background, until the theme itself is installed. */
     fun pick(theme: BundledTheme) {
-        Palette.apply(theme.colors)
+        Palette.apply(bundledVariant(theme))
         style.update { it.with(Style.THEME, theme.name).with(Style.BACKGROUND, null) }
     }
 
@@ -140,11 +201,12 @@ class ThemeStore(
      * disk: wallpaper, launcher colors and guest configs. Returns whether it was.
      */
     suspend fun applyPicked(): Boolean {
-        val theme = themes.firstOrNull { it.name == picked } ?: return false
+        val theme = themes.firstOrNull { it.name == picked }?.let { variantOf(it) } ?: return false
         val backgrounds = theme.backgrounds()
         val bgName = style.style[Style.BACKGROUND]
         val bg = bgName?.let { n -> backgrounds.firstOrNull { it.name == n } }
-        if (bgName != null && bg == null) style.report("background: \"$bgName\" isn't one of ${theme.name}'s backgrounds; showing its first")
+        // The picked theme's counterpart has backgrounds of its own: one named for the other isn't a mistake.
+        if (bgName != null && bg == null && theme.name == picked) style.report("background: \"$bgName\" isn't one of ${theme.name}'s backgrounds; showing its first")
         val target = bg ?: backgrounds.firstOrNull()
         when {
             theme.name != current?.name || theme.colors != current?.colors -> show(theme, target)
@@ -159,10 +221,22 @@ class ThemeStore(
      * before the first frame.
      */
     fun loadPalette() {
-        // A user's own theme has no bundled colors.
-        runCatching { ThemeColors.resolve(ThemeColors.parse(context.assets.open("themes/$picked.toml").bufferedReader().use { it.readText() })) }
-            .recoverCatching { checkNotNull(dirs.load(picked)).colors }
-            .onSuccess { Palette.apply(it) }
+        fun colorsOf(name: String): Map<String, String>? =
+            // A user's own theme has no bundled colors.
+            runCatching { ThemeColors.resolve(ThemeColors.parse(context.assets.open("themes/$name.toml").bufferedReader().use { it.readText() })) }
+                .recoverCatching { checkNotNull(dirs.load(name)).colors }
+                .getOrNull()
+        val colors = colorsOf(picked) ?: return
+        Palette.apply(ThemeVariants.resolve(picked, colors, dark, { colorsOf(it) }).colors)
+    }
+
+    /**
+     * Shows the picked theme's variant for [dark] once Android's dark theme or
+     * [Style.APPEARANCE] changed: in full once the themes are loaded, until
+     * then in its colors.
+     */
+    private suspend fun followAppearance() {
+        if (!applyPicked()) loadPalette()
     }
 
     /** Whether our live wallpaper is the Android wallpaper; the launcher then shows it instead of drawing its own. */
@@ -199,13 +273,13 @@ class ThemeStore(
 
     private suspend fun restoreSaved() {
         themes = withContext(Dispatchers.IO) { scan() }
-        val theme = themes.firstOrNull { it.name == picked } ?: return
+        val theme = themes.firstOrNull { it.name == picked }?.let { variantOf(it) } ?: return
         current = theme
         Palette.apply(theme.colors)
-        // Templates and how we render them may have changed with an app update.
-        if (isLinux() && prefs.getString(RENDERED_BY, null) != appStamp(context)) {
+        // Templates and how we render them may have changed with an app update, and Android's dark theme while we weren't running.
+        if (isLinux() && (prefs.getString(RENDERED_BY, null) != appStamp(context) || prefs.getString(RENDERED_AS, null) != variantKey(theme))) {
             withContext(Dispatchers.IO) { guest.render(theme) }
-            prefs.edit().putString(RENDERED_BY, appStamp(context)).apply()
+            markRendered(theme)
         }
         val bg = theme.backgrounds().let { list -> list.firstOrNull { it.name == style.style[Style.BACKGROUND] } ?: list.firstOrNull() }
         // On reload a different background may replace one already showing; it stays up until the new one is decoded.
@@ -249,6 +323,21 @@ class ThemeStore(
 
     /** Single-theme fetches by theme name; each resolves to why it failed, or null. Main thread only. */
     private val prefetches = HashMap<String, Deferred<String?>>()
+
+    init {
+        context.registerComponentCallbacks(
+            object : ComponentCallbacks {
+                override fun onConfigurationChanged(newConfig: Configuration) {
+                    systemDark = isNight(newConfig)
+                }
+
+                @Deprecated("Deprecated in Java")
+                override fun onLowMemory() = Unit
+            },
+        )
+        // Android's dark theme went on or off, or the appearance changed in the Style menu or style.toml.
+        scope.launch { snapshotFlow { dark }.drop(1).collect { followAppearance() } }
+    }
 
     /**
      * Starts fetching [name]'s colors and first wallpaper (see [fetchPicked]),
@@ -388,7 +477,8 @@ class ThemeStore(
         val own = theme.own ?: return
         withContext(Dispatchers.IO) { LauncherData.deleteTree(own) }
         rescan()
-        if (current?.name != theme.name) return
+        // What shows may be the picked theme's counterpart.
+        if (current?.name != theme.name && picked != theme.name) return
         val next = themes.firstOrNull { it.name == theme.name } ?: themes.firstOrNull { it.name == DEFAULT_THEME } ?: themes.firstOrNull()
         if (next != null) {
             apply(next)
@@ -398,10 +488,21 @@ class ThemeStore(
         }
     }
 
-    /** Picks [theme] with its first background, and shows it. */
+    /** Picks [theme] with its first background, and shows it in its variant for [dark]. */
     suspend fun apply(theme: OmarchyTheme) {
         style.update { it.with(Style.THEME, theme.name).with(Style.BACKGROUND, null) }
-        show(theme, theme.backgrounds().firstOrNull())
+        val shown = variantOf(theme)
+        show(shown, shown.backgrounds().firstOrNull())
+    }
+
+    /** Picks [family]: as it's named in style.toml already, else by [ThemeFamily.name]. */
+    suspend fun pickFamily(family: ThemeFamily) {
+        val name = picked.takeIf { it in family.members } ?: family.name
+        themes.firstOrNull { it.name == name }?.let { apply(it) }
+    }
+
+    private fun markRendered(theme: OmarchyTheme) {
+        prefs.edit().putString(RENDERED_BY, appStamp(context)).putString(RENDERED_AS, variantKey(theme)).apply()
     }
 
     /** The launcher's colors and wallpaper first, then the guest's configs, which take a while. */
@@ -417,7 +518,7 @@ class ThemeStore(
             // Called from screen scopes, where a failed write (storage full) would crash the launcher.
             runCatching {
                 guest.render(theme)
-                prefs.edit().putString(RENDERED_BY, appStamp(context)).apply()
+                markRendered(theme)
                 onConfigChanged()
                 guest.recolorTerminals(theme)
             }.onFailure { Log.e(TAG, "theme ${theme.name} not written to the guest", it) }
@@ -434,7 +535,7 @@ class ThemeStore(
             guest.render(theme)
             background?.let(guest::linkBackground)
         }
-        prefs.edit().putString(RENDERED_BY, appStamp(context)).apply()
+        markRendered(theme)
     }
 
     suspend fun setBackground(file: File?) {
@@ -465,7 +566,7 @@ class ThemeStore(
             style.report("theme: no theme named \"$name\" in ~/.local/share/omarchy/themes or ~/.config/omarchy/themes")
             return
         }
-        Palette.apply(bundledTheme.colors)
+        Palette.apply(bundledVariant(bundledTheme))
         fetchPicked()?.let { style.report("theme: \"$name\" couldn't be downloaded: $it") }
     }
 
@@ -523,17 +624,44 @@ class ThemeStore(
      */
     fun managed() = guest.managed(current ?: savedTheme())
 
-    private fun savedTheme(): OmarchyTheme? = runCatching { dirs.load(picked) }.getOrNull()
+    private fun savedTheme(): OmarchyTheme? = loadVariant(dirs, picked, dark)
 
     companion object {
         /** The Omarchy commit themes and configs come from. Changing it updates them on every install. */
         const val OMARCHY_REF = "8b4eae66da2938ba9559f103b18dbf85cdf28a70"
 
         private const val RENDERED_BY = "rendered_by"
+
+        /** Which variant of the theme the guest has, as [variantKey] says. */
+        private const val RENDERED_AS = "rendered_as"
         private const val DEFAULT_THEME = "tokyo-night"
 
         /** Called on the main thread after the theme or background changes (the live wallpaper listens). */
         val changeListeners = CopyOnWriteArraySet<() -> Unit>()
+
+        private fun variantKey(theme: OmarchyTheme) = theme.name + if (theme.isLight) ":light" else ":dark"
+
+        /** Whether [config] has Android's dark theme on. */
+        fun isNight(config: Configuration) = config.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+
+        /**
+         * [name]'s theme from disk, in its variant for [dark]; null if it isn't
+         * there. [others] as for [ThemeVariants.counterpart].
+         */
+        private fun loadVariant(
+            dirs: ThemeDirs,
+            name: String,
+            dark: Boolean,
+            others: () -> Sequence<Pair<String, Map<String, String>>> = { emptySequence() },
+        ): OmarchyTheme? {
+            val theme = runCatching { dirs.load(name) }.getOrNull() ?: return null
+            val r = ThemeVariants.resolve(name, theme.colors, dark, { n -> runCatching { dirs.load(n)?.colors }.getOrNull() }, others)
+            return when {
+                r.derived -> theme.withDerivedColors(r.colors)
+                r.name == name -> theme
+                else -> runCatching { dirs.load(r.name) }.getOrNull() ?: theme
+            }
+        }
 
         fun prefs(context: Context) = context.getSharedPreferences("themes", Context.MODE_PRIVATE)
 
@@ -552,7 +680,9 @@ class ThemeStore(
             val saved = StyleStore.read(context)
             // Unset is the default theme: first run leaves the one it showed unsaved.
             val name = saved[Style.THEME] ?: DEFAULT_THEME
-            val theme = runCatching { themeDirs(context).load(name) }.getOrNull() ?: return null
+            val dark = ThemeVariants.wantsDark(saved[Style.APPEARANCE], isNight(context.resources.configuration))
+            val dirs = themeDirs(context)
+            val theme = loadVariant(dirs, name, dark) { dirs.scan().asSequence().map { it.name to it.colors } } ?: return null
             // Unset, or not one of the theme's: its first, as the launcher shows.
             val bg = theme.backgrounds().let { list -> list.firstOrNull { it.name == saved[Style.BACKGROUND] } ?: list.firstOrNull() }
             return theme.colors to bg

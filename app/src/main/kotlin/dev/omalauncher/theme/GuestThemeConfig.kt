@@ -29,9 +29,13 @@ class GuestThemeConfig(
         val themeDir = File(currentDir, "theme")
         themeDir.deleteRecursively()
         themeDir.mkdirs()
-        theme.guestFiles().forEach { (name, file) -> file.copyTo(File(themeDir, name)) }
+        val templates = templatesDir.listFiles { f -> f.extension == "tpl" }.orEmpty()
+        // A derived variant's colors are in none of the theme's files: the templates render them instead of what it ships.
+        val rendered = if (theme.derived) templates.map { it.nameWithoutExtension }.toSet() else emptySet()
+        theme.guestFiles().forEach { (name, file) -> if (name !in rendered) file.copyTo(File(themeDir, name)) }
+        if (theme.derived) File(themeDir, "colors.toml").writeText(ThemeVariants.toToml(theme.colors))
         File(currentDir, "theme.name").writeText(theme.name + "\n")
-        templatesDir.listFiles { f -> f.extension == "tpl" }.orEmpty().forEach { tpl ->
+        templates.forEach { tpl ->
             val out = File(themeDir, tpl.nameWithoutExtension)
             val colors = if (tpl.name == "foot.ini.tpl") footColors(theme.colors) else theme.colors
             if (!out.exists()) out.writeText(Templates.render(tpl.readText(), colors))

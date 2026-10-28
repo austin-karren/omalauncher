@@ -1,6 +1,7 @@
 package dev.omalauncher.theme
 
 import android.app.WallpaperColors
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Paint
@@ -12,6 +13,7 @@ import android.service.wallpaper.WallpaperService
 import android.view.SurfaceHolder
 import dev.omalauncher.ui.decodeForScreen
 import dev.omalauncher.ui.wallpaperCrop
+import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
 
 /**
@@ -23,6 +25,14 @@ import java.util.concurrent.Executors
  */
 class OmarchyWallpaperService : WallpaperService() {
     override fun onCreateEngine(): Engine = OmarchyEngine()
+
+    private val engines = CopyOnWriteArraySet<OmarchyEngine>()
+
+    /** Android's dark theme went on or off: the theme's other variant may show, even with the launcher not running. */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        engines.forEach { it.onThemeChanged() }
+    }
 
     private inner class OmarchyEngine : Engine() {
         private val main = Handler(Looper.getMainLooper())
@@ -36,17 +46,19 @@ class OmarchyWallpaperService : WallpaperService() {
         /** Where the launcher's pages are scrolled, 0 to 1: the background slides along. */
         private var xOffset = 0.5f
 
-        private val onThemeChanged: () -> Unit = { main.post { reload() } }
+        val onThemeChanged: () -> Unit = { main.post { reload() } }
 
         override fun onCreate(surfaceHolder: SurfaceHolder) {
             super.onCreate(surfaceHolder)
             setOffsetNotificationsEnabled(true)
             ThemeStore.changeListeners.add(onThemeChanged)
+            engines.add(this)
             reload()
         }
 
         override fun onDestroy() {
             ThemeStore.changeListeners.remove(onThemeChanged)
+            engines.remove(this)
             decoder.shutdownNow()
             super.onDestroy()
         }
