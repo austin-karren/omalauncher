@@ -309,7 +309,7 @@ private fun EditorBody(
                                     .fillMaxHeight()
                                     .then(if (wrap) Modifier.fillMaxWidth() else Modifier.widthIn(min = viewport))
                                     .focusRequester(editorFocus),
-                            textStyle = Mono.copy(fontSize = TextSize.Large),
+                            textStyle = FixedMono.copy(fontSize = TextSize.Large),
                             keyboardOptions =
                                 KeyboardOptions(
                                     capitalization = if (prose) KeyboardCapitalization.Sentences else KeyboardCapitalization.None,
@@ -362,7 +362,7 @@ private fun Gutter(
 ) {
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
-    val style = Mono.copy(color = Palette.muted, fontSize = TextSize.Large)
+    val style = FixedMono.copy(color = Palette.muted, fontSize = TextSize.Large)
     val text = state.text
     val starts = remember(text) { lineStarts(text) }
     // The widest number, then the gap to the text.

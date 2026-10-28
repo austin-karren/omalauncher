@@ -168,7 +168,7 @@ fun StyleScreen(
             if (linux == LinuxState.Installed) {
                 // Linux's fonts, which the terminal section lists.
                 Heading("launcher & widgets")
-                val fonts = listOf(Style.SYSTEM_FONT) + runtime.terminalFont.families
+                val fonts = listOf(Style.SYSTEM_FONT, LauncherFont.GEIST, LauncherFont.GEIST_MONO) + runtime.terminalFont.families
                 FontOption(fonts, style.style[Style.FONT], label = { if (it == Style.SYSTEM_FONT) "system default" else it }) { family ->
                     style.update { it.with(Style.FONT, family) }
                 }

@@ -10,6 +10,7 @@ import dev.omalauncher.R
 import dev.omalauncher.theme.Style
 import dev.omalauncher.theme.StyleStore
 import dev.omalauncher.ui.LauncherStyle
+import dev.omalauncher.ui.MonoFont
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -17,8 +18,10 @@ import kotlin.math.abs
 
 /**
  * The font the launcher's own text and widgets draw in: Android's monospace
- * for [Style.FONT]'s "system", or one of the guest's monospace families,
- * loaded from its files in the rootfs. The files found are remembered in
+ * for [Style.FONT]'s "system", the bundled Geist ([GEIST], proportional) or
+ * Geist Mono ([GEIST_MONO]), or one of the guest's monospace families,
+ * loaded from its files in the rootfs. [MonoFont] follows it, except that for
+ * Geist it is Geist Mono: what lines characters up stays monospace. The files found are remembered in
  * [cache], so the next start draws in it from the first frame without asking
  * fontconfig again. A family Linux doesn't have (or no Linux) falls back to
  * Android's. Either way, symbols the font lacks come from noto_symbols.ttf
@@ -37,6 +40,27 @@ class LauncherFont(
         SYSTEM_MONO.takeIf { File(it).isFile }?.let { withSymbols(listOf(Face(400, false, it)), guestPaths = false) } ?: FontFamily.Monospace
     }
 
+    /** Geist, proportional, in the weights the launcher draws (400 to 700); Android's sans-serif if it can't be read. */
+    private val geist: FontFamily by lazy {
+        fromResources(
+            listOf(400 to R.font.geist_regular, 500 to R.font.geist_medium, 600 to R.font.geist_semibold, 700 to R.font.geist_bold),
+            "sans-serif",
+        ) ?: FontFamily.SansSerif
+    }
+
+    /** Geist Mono, regular and bold; [system] if it can't be read. */
+    private val geistMono: FontFamily by lazy {
+        fromResources(listOf(400 to R.font.geist_mono_regular, 700 to R.font.geist_mono_bold), "monospace") ?: system
+    }
+
+    /** The bundled family [family] names, null for "system" and Linux's. */
+    private fun bundled(family: String): FontFamily? =
+        when (family) {
+            GEIST -> geist
+            GEIST_MONO -> geistMono
+            else -> null
+        }
+
     /** The symbol fonts behind every family, read once: the same for all of them. */
     private val symbols by lazy { listOf(single(R.font.noto_symbols), single(R.font.nerd_symbols)) }
 
@@ -49,6 +73,7 @@ class LauncherFont(
     /** Sets [LauncherStyle.font] from what [cache] remembers, without the guest; at start, before the first frame. */
     fun restore() {
         val family = style.style[Style.FONT]
+        bundled(family)?.let { return showBundled(family, it) }
         show(if (family == Style.SYSTEM_FONT) null else cached(family), null)
     }
 
@@ -56,6 +81,7 @@ class LauncherFont(
     suspend fun apply() {
         val family = style.style[Style.FONT]
         if (family == Style.SYSTEM_FONT) return show(null, null)
+        bundled(family)?.let { return showBundled(family, it) }
         val faces = withContext(Dispatchers.IO) { cached(family) ?: find(family).also { save(family, it) } }
         if (faces == shown) return
         val font = withContext(Dispatchers.IO) { load(faces) }
@@ -70,7 +96,18 @@ class LauncherFont(
     ) {
         val built = font ?: faces?.let(::load)
         LauncherStyle.font = built ?: system
+        MonoFont.family = LauncherStyle.font
         shown = faces.takeIf { built != null }
+    }
+
+    /** Shows the bundled [font] that [family] names; for proportional Geist, [MonoFont] is Geist Mono. */
+    private fun showBundled(
+        family: String,
+        font: FontFamily,
+    ) {
+        LauncherStyle.font = font
+        MonoFont.family = if (family == GEIST) geistMono else font
+        shown = null
     }
 
     /** Back to Android's font, as Linux and its font files are deleted; the setting stays for when it's back. */
@@ -78,6 +115,9 @@ class LauncherFont(
         show(null, null)
         cache.delete()
         loaded.clear()
+        // Geist is bundled, so it stays without Linux.
+        val family = style.style[Style.FONT]
+        bundled(family)?.let { showBundled(family, it) }
     }
 
     /** What [family] loaded, so going back to one is instant. */
@@ -144,13 +184,35 @@ class LauncherFont(
                         .build()
                 }.getOrNull()
             }
+        return typeface(fonts, "monospace")
+    }
+
+    /** [weights] (weight to font resource) as a family with the symbols behind them, then Android's [systemFallback]. */
+    private fun fromResources(
+        weights: List<Pair<Int, Int>>,
+        systemFallback: String,
+    ): FontFamily? {
+        val fonts =
+            weights.mapNotNull { (weight, res) ->
+                runCatching { Font.Builder(resources, res).setWeight(weight).setSlant(FontStyle.FONT_SLANT_UPRIGHT).build() }
+                    .onFailure { Log.w(TAG, "can't read a bundled font", it) }
+                    .getOrNull()
+            }
+        return typeface(fonts, systemFallback)
+    }
+
+    /** [fonts] as one family, with noto_symbols.ttf and nerd_symbols.ttf behind them, then Android's [systemFallback]. */
+    private fun typeface(
+        fonts: List<Font>,
+        systemFallback: String,
+    ): FontFamily? {
         if (fonts.isEmpty()) return null
         return runCatching {
             val family = android.graphics.fonts.FontFamily.Builder(fonts.first()).apply { fonts.drop(1).forEach(::addFont) }.build()
             val typeface =
                 Typeface.CustomFallbackBuilder(family)
                     .apply { symbols.forEach(::addCustomFallback) }
-                    .setSystemFallback("monospace")
+                    .setSystemFallback(systemFallback)
                     .build()
             FontFamily(androidx.compose.ui.text.font.Typeface(typeface))
         }.onFailure { Log.w(TAG, "can't build the font", it) }.getOrNull()
@@ -176,6 +238,12 @@ class LauncherFont(
 
     companion object {
         private const val TAG = "launcher-font"
+
+        /** [Style.FONT]'s value for the bundled Geist, proportional (SIL OFL 1.1, github.com/vercel/geist-font). */
+        const val GEIST = "geist"
+
+        /** [Style.FONT]'s value for the bundled Geist Mono. */
+        const val GEIST_MONO = "geist-mono"
 
         /** The file AOSP's fonts.xml names for "monospace". */
         private const val SYSTEM_MONO = "/system/fonts/DroidSansMono.ttf"

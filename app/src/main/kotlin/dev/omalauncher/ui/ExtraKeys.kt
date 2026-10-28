@@ -144,7 +144,7 @@ internal fun RepeatingKeyCap(
         if (icon != null) {
             Image(icon, label, Modifier.size(20.dp).rotate(rotation), colorFilter = ColorFilter.tint(color))
         } else {
-            BasicText(label, style = Mono.copy(color = color), maxLines = 1)
+            BasicText(label, style = FixedMono.copy(color = color), maxLines = 1)
         }
     }
 }
