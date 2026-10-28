@@ -49,7 +49,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
-import dev.omalauncher.ui.LauncherStyle
+import dev.omalauncher.ui.MonoFont
 import dev.omalauncher.ui.Palette
 import dev.omalauncher.widgets.lang.Builtins
 import dev.omalauncher.widgets.lang.Compiler
@@ -591,7 +591,7 @@ private class Painter(
                         if (styled && first is Lst) spans(first, inst) else AnnotatedString(first.text()),
                         TextStyle(
                             color = color,
-                            fontFamily = if (styled) fontFamily(named["font"], inst) else LauncherStyle.font,
+                            fontFamily = if (styled) fontFamily(named["font"], inst) else MonoFont.family,
                             fontSize = (named["size"]?.num() ?: 13.0).sp,
                             fontWeight = (if (styled) weight(named["fontWeight"]) else null) ?: if (named["bold"]?.truthy == true) FontWeight.Bold else null,
                             fontStyle = if (styled && named["italic"]?.truthy == true) FontStyle.Italic else null,

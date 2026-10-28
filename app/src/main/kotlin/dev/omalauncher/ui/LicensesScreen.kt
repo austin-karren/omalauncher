@@ -113,6 +113,13 @@ private val COMPONENTS =
             "https://pictogrammers.com/library/mdi/",
         ),
         Component(
+            "Geist and Geist Mono",
+            "the launcher's font, when chosen",
+            "geist-OFL",
+            "Copyright (c) 2023 Vercel, in collaboration with basement.studio. Geist 1.802, licensed under the SIL Open Font License 1.1.",
+            "https://github.com/vercel/geist-font",
+        ),
+        Component(
             "Compose Multiplatform",
             "user interface",
             APACHE,

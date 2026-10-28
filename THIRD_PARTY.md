@@ -36,6 +36,10 @@ agent in the launcher, which is not affiliated with or endorsed by any of them.
 `app/src/main/res/font/noto_symbols.ttf`: a subset of [Noto Sans Symbols 2](https://github.com/notofonts/symbols)
 (SIL OFL 1.1), Copyright 2022 The Noto Project Authors.
 
+`app/src/main/res/font/geist_*.ttf`: [Geist and Geist Mono](https://github.com/vercel/geist-font) 1.802
+(the static TTFs of the npm package `geist` 1.8.2), SIL OFL 1.1, Copyright (c) 2023 Vercel, in collaboration
+with basement.studio. The license is in `app/src/main/assets/licenses/geist-OFL.txt`.
+
 ## Omarchy themes
 
 `app/src/main/assets/themes/*.toml` and `app/src/main/assets/theme-backgrounds.txt`

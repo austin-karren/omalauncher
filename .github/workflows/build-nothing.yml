@@ -1,0 +1,60 @@
+name: build-nothing
+
+# Builds the nothing APK (dev.omalauncher.nothing, "Omalauncher Nothing", installs beside the Play Store's
+# dev.omalauncher; not debuggable, so safe as an everyday launcher) with proot, debug-signed: no secrets
+# needed. The APK is the run's artifact.
+on:
+  push:
+    branches: ['nothing-*', 'geist-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-nothing-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+
+      # Caches Gradle's dependencies and wrapper; written from these branches too, not only the default one.
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      # The NDK fetch-proot.sh pins (30.0.16248370) and the CMake wlbridge builds with, up front so AGP doesn't
+      # download them mid-build; then proot itself, so Linux works in this APK.
+      - name: Install the NDK and CMake, fetch proot
+        run: |
+          sudo apt-get update -q && sudo apt-get install -yq libarchive-tools
+          ndk=$(sed -n 's/^NDK_VERSION=//p' scripts/fetch-proot.sh)
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          [ -d "$ANDROID_HOME/ndk/$ndk" ] || yes | "$sdkmanager" --install "ndk;$ndk" >/dev/null
+          [ -d "$ANDROID_HOME/cmake/3.22.1" ] || yes | "$sdkmanager" --install "cmake;3.22.1" >/dev/null
+          scripts/fetch-proot.sh
+
+      - name: Test and build
+        run: ./gradlew :owl:test :app:testDebugUnitTest :app:assembleNothing
+
+      - name: Name the APK
+        id: apk
+        run: |
+          apk="omalauncher-nothing-$(git rev-parse --short HEAD).apk"
+          cp app/build/outputs/apk/nothing/app-nothing.apk "$apk"
+          sha256sum "$apk"
+          echo "file=$apk" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: omalauncher-nothing-${{ github.run_number }}
+          path: ${{ steps.apk.outputs.file }}
+          if-no-files-found: error

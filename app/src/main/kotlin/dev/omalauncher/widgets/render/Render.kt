@@ -119,6 +119,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import dev.omalauncher.ui.Mono
 import dev.omalauncher.ui.NerdSymbols
 import dev.omalauncher.ui.LauncherStyle
+import dev.omalauncher.ui.MonoFont
 import dev.omalauncher.ui.Palette
 import dev.omalauncher.ui.frame
 import dev.omalauncher.ui.holdsKeys
@@ -1155,7 +1156,9 @@ internal fun fontFamily(
     inst: WidgetInstance,
 ): FontFamily =
     when (val name = v.textOrNull()) {
-        null, "mono" -> LauncherStyle.font
+        null -> LauncherStyle.font
+        // Monospace even when the launcher's font is the proportional Geist: keys, columns, fetch output.
+        "mono" -> MonoFont.family
         "sans" -> FontFamily.SansSerif
         "serif" -> FontFamily.Serif
         "icon" -> NerdSymbols

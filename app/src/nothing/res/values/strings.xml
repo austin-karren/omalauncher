@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The nothing build (dev.omalauncher.nothing) beside the Play Store's, told apart in the drawer and settings. -->
+    <string name="app_name">Omalauncher Nothing</string>
+</resources>

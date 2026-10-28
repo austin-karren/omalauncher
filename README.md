@@ -75,6 +75,8 @@ swipe-down panel dismisses it.
 ```sh
 ./scripts/fetch-proot.sh          # Termux's proot -> app/src/main/jniLibs (needs bsdtar)
 ./gradlew :app:installDebug
+# or, beside the Play Store's and safe as an everyday launcher: dev.omalauncher.nothing, not debuggable
+# ./gradlew :app:installNothing
 # optional: skip the 830 MB download on the device
 adb push ArchLinuxARM-aarch64-latest.tar.gz /sdcard/Android/data/dev.omalauncher/files/
 ```

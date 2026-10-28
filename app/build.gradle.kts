@@ -61,14 +61,28 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
             signingConfig = signingConfigs.getByName(if (uploadKey != null) "release" else "debug")
         }
+        // Installs beside the Play Store's dev.omalauncher, as "Omalauncher Nothing" (src/nothing/res/values/strings.xml),
+        // for everyday use: not debuggable, so BuildConfig.DEBUG is false and MainActivity ignores the exec and theme
+        // extras any app could send it. Debug-signed, so CI needs no secrets; not minified, so no R8 surprises.
+        // Its data, the Linux guest among it, is under its own package's files dir, so it sets Linux up afresh.
+        create("nothing") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".nothing"
+            isDebuggable = false
+            isJniDebuggable = false
+            isMinifyEnabled = false
+            isShrinkResources = false
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("debug")
+        }
     }
 }
 
 // ExamplesTest reads the widget examples and the README from here, so editing them reruns it.
 tasks.withType<Test>().configureEach { inputs.dir("src/main/assets/widgets") }
 
-// Gitignored, built by scripts/fetch-proot.sh. Without it a release still builds, but every Linux command fails.
-tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+// Gitignored, built by scripts/fetch-proot.sh. Without it a release (or nothing) build still builds, but every Linux command fails.
+tasks.matching { it.name == "preReleaseBuild" || it.name == "preNothingBuild" }.configureEach {
     val proot = file("src/main/jniLibs/arm64-v8a/libproot.so")
     doFirst { check(proot.exists()) { "$proot is missing; run scripts/fetch-proot.sh" } }
 }
